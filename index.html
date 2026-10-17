@@ -152,6 +152,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Poppins,system
 <script>
 // Paste your Google OAuth Client ID here to turn on Google Calendar (see README.md)
 const GOOGLE_CLIENT_ID="958189579808-d6add3bqce5pq68hnejnpa623dmq7ep7.apps.googleusercontent.com";
+// Paste your Firebase web app config here to sync across devices (see README.md)
+window.FIREBASE_CONFIG={apiKey:"",authDomain:"",projectId:"",storageBucket:"",messagingSenderId:"",appId:""};
 const PAL=[["#0e9aa7","#12284c"],["#ff8a1f","#2fb86b"],["#8e44ad","#e84393"],["#2b5fd9","#17b6e6"],["#e5484d","#f5a623"]];
 const $=s=>document.querySelector(s);
 let uid=null,coCol=null,pdCol=null,companies=[],pendings=[],filter="all",events=[],calErr=null,calOk=false,persist=false,sel=0,drafts={},lid=0,q="",qDue="",qHi=false,showDone=true;
@@ -181,6 +183,36 @@ async function initData(){
   pdS=store("mp_pd",[],rows=>{pendings=rows.map(x=>({...x}));render()});
   coCol=coS;pdCol=pdS;coS.reload();pdS.reload();
   addEventListener("storage",e=>{if(e.key==="mp_co")coS.reload();if(e.key==="mp_pd")pdS.reload()});
+}
+let authUser,cloud=false,unsubs=[];
+function renderAuth(){
+  const b=$("#banner");b.replaceChildren();
+  if(!FIREBASE_CONFIG.apiKey||authUser===undefined)return;
+  const row={class:"note",style:"display:flex;gap:12px;align-items:center;flex-wrap:wrap"};
+  if(!authUser){b.append(h("div",row,h("span",{style:"flex:1;min-width:200px"},"☁️ Sign in with Google to keep your pendings the same on your phone and laptop."),h("button",{class:"gbtn",onclick:()=>FB.signIn().catch(()=>{})},"Sign in")));return}
+  b.append(h("div",row,h("span",{style:"flex:1;min-width:200px"},"☁️ Synced across your devices · "+(authUser.email||authUser.displayName||"signed in")),h("button",{class:"gbtn",style:"background:var(--ink);color:var(--bg)",onclick:()=>FB.signOut()},"Sign out")));
+}
+async function migrate(){
+  try{
+    const uid=authUser.uid,cc=FB.collection(FB.db,"users",uid,"companies");
+    if(!(await FB.getDocs(cc)).empty)return;
+    const lc=JSON.parse(localStorage.getItem("mp_co")||"null")||SEED,lp=JSON.parse(localStorage.getItem("mp_pd")||"[]"),pc=FB.collection(FB.db,"users",uid,"pendings");
+    for(const c of lc){const{id,...d}=c;await FB.setDoc(FB.doc(cc,id),d)}
+    for(const t of lp){const{id,...d}=t;await FB.setDoc(FB.doc(pc,id),d)}
+  }catch(e){}
+}
+window.onCloudUser=async u=>{
+  unsubs.forEach(f=>f());unsubs=[];authUser=u;
+  if(!u){cloud=false;coCol=coS;pdCol=pdS;coS.reload();pdS.reload();renderAuth();return}
+  await migrate();cloud=true;
+  const mk=(name,cb)=>{const col=FB.collection(FB.db,"users",u.uid,name);unsubs.push(FB.onSnapshot(col,s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))));return{add:d=>FB.addDoc(col,d),doc:id=>({update:f=>FB.updateDoc(FB.doc(col,id),f),delete:()=>FB.deleteDoc(FB.doc(col,id))})}};
+  coCol=mk("companies",rows=>{companies=rows.sort((a,b)=>(a.order||0)-(b.order||0));render()});
+  pdCol=mk("pendings",rows=>{pendings=rows;render()});
+  renderAuth();
+};
+async function importAll(j){
+  if(cloud&&authUser){for(const[n,rows]of[["companies",j.companies],["pendings",j.pendings]]){const col=FB.collection(FB.db,"users",authUser.uid,n);for(const r of rows){const{id,...d}=r;await FB.setDoc(id?FB.doc(col,id):FB.doc(col),d)}}}
+  else{localStorage.setItem("mp_co",JSON.stringify(j.companies));localStorage.setItem("mp_pd",JSON.stringify(j.pendings));coS.reload();pdS.reload()}
 }
 async function addCompany(){
   const name=$("#coName").value.trim();if(!name||companies.some(c=>c.name.toLowerCase()===name.toLowerCase()))return;$("#coName").value="";
@@ -277,21 +309,28 @@ let tok=null,tc=null,needConn=true;
 function initGoogle(){
   if(!GOOGLE_CLIENT_ID){needConn=false;calErr="Calendar isn\u2019t set up yet. Add your Google Client ID in index.html (see README.md).";renderCal();return}
   if(!(window.google&&google.accounts&&google.accounts.oauth2)){setTimeout(initGoogle,400);return}
-  tc=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:"https://www.googleapis.com/auth/calendar.readonly",callback:r=>{if(r&&r.access_token){tok=r.access_token;needConn=false;fetchCal()}else{needConn=true;calErr="Google sign-in was cancelled.";renderCal()}}});
-  needConn=true;calErr="Connect your Google Calendar to see your availability.";renderCal();
+  tc=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:"https://www.googleapis.com/auth/calendar.readonly",callback:r=>{if(r&&r.access_token){tok=r.access_token;needConn=false;try{localStorage.setItem("mp_gcal","1")}catch(e){}fetchCal()}else{needConn=true;calErr="Google sign-in was cancelled.";renderCal()}}});
+  needConn=true;calErr="Connect your Google Calendar to see your availability.";armAuto();renderCal();
+}
+let armed=false;
+function armAuto(){
+  let on=false;try{on=localStorage.getItem("mp_gcal")==="1"}catch(e){}
+  if(!on||armed||tok||!tc)return;armed=true;calErr="Tap anywhere on the page and your calendar reconnects by itself.";
+  const go=()=>{armed=false;if(!tok)connectGoogle()};
+  addEventListener("pointerdown",go,{once:true});addEventListener("keydown",go,{once:true});
 }
 function connectGoogle(){if(tc)tc.requestAccessToken({prompt:""})}
 async function fetchCal(){
   const s=new Date();s.setHours(0,0,0,0);const e=new Date(s);e.setDate(e.getDate()+7);
   try{
     const r=await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=100&timeMin="+encodeURIComponent(s.toISOString())+"&timeMax="+encodeURIComponent(e.toISOString()),{headers:{Authorization:"Bearer "+tok}});
-    if(r.status===401){tok=null;calOk=false;needConn=true;calErr="Your Google session expired.";$("#liveT").textContent="Calendar offline";renderCal();return}
+    if(r.status===401){tok=null;calOk=false;needConn=true;calErr="Your Google session expired.";$("#liveT").textContent="Calendar offline";armAuto();renderCal();return}
     if(!r.ok)throw 0;
     events=(await r.json()).items||[];calErr=null;calOk=true;stamp(Date.now());renderCal();
   }catch(x){if(!calOk){calErr="Couldn\u2019t load your calendar.";renderCal()}}
 }
 setInterval(()=>{if(tok)fetchCal()},60000);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&tok)fetchCal()});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){if(tok)fetchCal();else{armAuto();renderCal()}}});
 const hs=$("#hs"),he=$("#he");
 for(let i=0;i<=23;i++){const l=new Date(2000,0,1,i).toLocaleTimeString([],{hour:"numeric"});hs.append(h("option",{value:i},l));he.append(h("option",{value:i},l))}
 hs.value=hS;he.value=hE;
@@ -360,8 +399,19 @@ $("#bT").onclick=()=>setView("tasks");$("#bC").onclick=()=>setView("cal");
 setInterval(render,300000);
 $("#bx").onclick=()=>{const b=new Blob([JSON.stringify({companies,pendings},null,1)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="my-pendings-backup-"+ymd(new Date())+".json";a.click()};
 $("#bi").onclick=()=>$("#bf").click();
-$("#bf").onchange=async e=>{try{const j=JSON.parse(await e.target.files[0].text());if(!Array.isArray(j.companies)||!Array.isArray(j.pendings))throw 0;if(!confirm("Replace everything on this device with the backup?"))return;localStorage.setItem("mp_co",JSON.stringify(j.companies));localStorage.setItem("mp_pd",JSON.stringify(j.pendings));coS.reload();pdS.reload()}catch(x){alert("That file isn’t a valid backup.")}e.target.value=""};
+$("#bf").onchange=async e=>{try{const j=JSON.parse(await e.target.files[0].text());if(!Array.isArray(j.companies)||!Array.isArray(j.pendings))throw 0;if(!confirm("Import this backup? Items with the same ID will be overwritten."))return;await importAll(j)}catch(x){alert("That file isn’t a valid backup.")}e.target.value=""};
 render();initData();initGoogle();
+</script>
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import{initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,addDoc,setDoc,updateDoc,deleteDoc,onSnapshot,getDocs}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const cfg=window.FIREBASE_CONFIG;
+if(cfg&&cfg.apiKey){
+  const app=initializeApp(cfg),auth=getAuth(app),db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});
+  window.FB={db,collection,doc,addDoc,setDoc,updateDoc,deleteDoc,onSnapshot,getDocs,signIn:()=>signInWithPopup(auth,new GoogleAuthProvider()),signOut:()=>signOut(auth)};
+  onAuthStateChanged(auth,u=>window.onCloudUser&&window.onCloudUser(u));
+}
 </script>
 </body>
 </html>

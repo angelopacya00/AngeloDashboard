@@ -93,7 +93,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Poppins,system
 .seg button{border:0;background:var(--card);color:var(--mute);padding:7px 12px;font:inherit;font-size:12px;cursor:pointer}.seg button.on{background:var(--ink);color:var(--bg)}
 .days .wh{text-align:center;font-size:10px;font-weight:600;color:var(--mute);padding:2px 0}
 .days.m .d{padding:4px 0}.d.td{outline:2px solid var(--acc)}.d.om{opacity:.4}
-.blk.fr{cursor:pointer}
+.blk.fr,.blk.ev{cursor:pointer}.pill.lk{cursor:pointer}
 .edit input[type=time]{font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
 .gbtn{border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:600;color:#fff;background:linear-gradient(135deg,#12284c,#0e9aa7);cursor:pointer}
 .foot{display:flex;gap:8px;justify-content:center;padding:0 0 100px}
@@ -320,41 +320,69 @@ function mv(n){
   else{const dim=new Date(anchor.getFullYear(),anchor.getMonth()+n+1,0).getDate();anchor=new Date(anchor.getFullYear(),anchor.getMonth()+n,Math.min(anchor.getDate(),dim))}
   sfx("tick");reload();
 }
-function evPill(t){return t.evStart?h("span",{class:"pill"},"📅 "+new Date(t.evStart).toLocaleDateString([],{month:"short",day:"numeric"})+" "+tm(new Date(t.evStart))):null}
+function evPill(t){return t.evStart?h("span",{class:"pill lk",title:"Show on calendar",onclick:()=>{if(innerWidth<=900)setView("cal");anchor=sod(new Date(t.evStart));reload()}},"📅 "+new Date(t.evStart).toLocaleDateString([],{month:"short",day:"numeric"})+" "+tm(new Date(t.evStart))):null}
 function openSched(o){
   o=o||{};const now=new Date(),bd=sod(o.date||anchor);let st=o.start;
   if(!st){st=new Date(bd);if(ymd(bd)===ymd(now)){const m=now.getMinutes();st.setHours(now.getHours()+(m>30?1:0),m>30?0:30,0,0)}else st.setHours(9,0,0,0)}
-  let en=new Date(st.getTime()+36e5);if(o.end&&o.end<en)en=o.end;
-  sched={title:o.title||"",company:o.company||"",pid:o.pid||"",date:ymd(st),start:hhmm(st),end:hhmm(en),msg:""};
+  let en=new Date(st.getTime()+36e5);if(o.end&&(o.eid||o.end<en))en=o.end;
+  sched={eid:o.eid||"",desc:o.desc||"",title:o.title||"",company:o.company||"",pid:o.pid||"",date:ymd(st),start:hhmm(st),end:hhmm(en),msg:""};
   renderSched();const el=$("#sched");if(el)el.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+function editEvent(e){
+  const multi=ymd(e.s)!==ymd(new Date(e.e.getTime()-1));
+  if(multi&&e.raw.htmlLink){window.open(e.raw.htmlLink,"_blank");return}
+  const c=evCo(e);
+  openSched({eid:e.raw.id,title:e.t,start:e.s,end:e.e,company:c?c.id:"",desc:e.raw.description||"",date:e.s});
 }
 function renderSched(){
   const S=$("#sched");S.replaceChildren();if(!sched)return;const s=sched;
   S.append(h("div",{class:"edit",style:"margin-bottom:12px"},
+    s.eid?h("div",{style:"font-size:12px;font-weight:600;color:var(--mute)"},"Editing a Google Calendar event"):null,
     h("input",{class:"ei",placeholder:"What are you scheduling?",value:s.title,oninput:x=>s.title=x.target.value}),
     h("div",{class:"er"},h("input",{type:"date",value:s.date,onchange:x=>s.date=x.target.value}),h("input",{type:"time",value:s.start,onchange:x=>s.start=x.target.value}),"to",h("input",{type:"time",value:s.end,onchange:x=>s.end=x.target.value})),
     h("div",{class:"er"},h("select",{onchange:x=>s.company=x.target.value},h("option",{value:""},"No company"),...companies.map(c=>h("option",{value:c.id,selected:c.id===s.company},c.name)))),
-    h("div",{class:"er"},h("button",{class:"gbtn",onclick:saveSched},"Add to Google Calendar"),h("button",{class:"ebtn",onclick:()=>{sched=null;renderSched()}},"Cancel")),
+    h("div",{class:"er"},h("button",{class:"gbtn",onclick:saveSched},s.eid?"Save changes":"Add to Google Calendar"),
+      s.eid?h("button",{class:"ebtn",style:"color:var(--bad);border-color:var(--bad)",onclick:delSched},"Delete"):null,
+      h("button",{class:"ebtn",onclick:()=>{sched=null;renderSched()}},"Cancel")),
     s.msg?h("div",{style:"font-size:12px;color:var(--bad)"},s.msg):null));
 }
+const EVURL="https://www.googleapis.com/calendar/v3/calendars/primary/events";
+function expired(){tok=null;calOk=false;needConn=true;calErr="Google needs your permission again. Tap Connect and allow it.";renderCal()}
 async function saveSched(){
   const s=sched,fail=m=>{s.msg=m;renderSched()};
   if(!s.title.trim())return fail("Add a title first.");
   const st=new Date(s.date+"T"+s.start+":00"),en=new Date(s.date+"T"+s.end+":00");
   if(!(en>st))return fail("End time must be after the start time.");
   if(!tok){fail("Connect Google Calendar first, then tap the button again.");connectGoogle();return}
-  const clash=events.find(e=>e.start&&e.start.dateTime&&e.status!=="cancelled"&&e.transparency!=="transparent"&&new Date(e.start.dateTime)<en&&new Date(e.end.dateTime)>st);
-  if(clash&&!confirm("This overlaps with “"+(clash.summary||"another event")+"”. Schedule it anyway?"))return;
+  const clash=events.find(e=>e.id!==s.eid&&e.start&&e.start.dateTime&&e.status!=="cancelled"&&e.transparency!=="transparent"&&new Date(e.start.dateTime)<en&&new Date(e.end.dateTime)>st);
+  if(clash&&!confirm("This overlaps with “"+(clash.summary||"another event")+"”. Save it anyway?"))return;
   const co=coOf(s.company),tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const body={summary:s.title.trim(),description:(co?"Company: "+co.name+"\n":"")+"Scheduled from My Pendings",start:{dateTime:st.toISOString(),timeZone:tz},end:{dateTime:en.toISOString(),timeZone:tz}};
+  const old=(s.desc||"").replace(/^Company: .*\n?/m,"");
+  const body={summary:s.title.trim(),description:(co?"Company: "+co.name+"\n":"")+(s.eid?old:"Scheduled from My Pendings"),start:{dateTime:st.toISOString(),timeZone:tz},end:{dateTime:en.toISOString(),timeZone:tz}};
   try{
-    const r=await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events",{method:"POST",headers:{Authorization:"Bearer "+tok,"Content-Type":"application/json"},body:JSON.stringify(body)});
-    if(r.status===401||r.status===403){tok=null;calOk=false;needConn=true;calErr="Google needs permission to add events. Tap Connect and allow it.";renderCal();return fail("Google needs permission to add events. Tap Connect below, allow it, then try again.")}
+    const r=await fetch(EVURL+(s.eid?"/"+encodeURIComponent(s.eid):""),{method:s.eid?"PATCH":"POST",headers:{Authorization:"Bearer "+tok,"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(r.status===401){expired();return fail("Google needs your permission again. Tap Connect below, allow it, then try again.")}
+    if(r.status===403)return fail(s.eid?"Google didn’t allow this change. If it’s someone else’s event, edit it in Google Calendar.":"Google needs permission to add events. Reconnect your calendar and try again.");
     if(!r.ok)throw 0;
     const ev=await r.json();
-    if(s.pid){const t=pendings.find(x=>x.id===s.pid);if(t)await upd(t,{evStart:st.toISOString(),evId:ev.id})}
+    const t=pendings.find(x=>s.eid?x.evId===s.eid:x.id===s.pid);
+    if(t)await upd(t,{evStart:st.toISOString(),evId:ev.id});
     sfx("done");sched=null;renderSched();anchor=sod(st);reload();
-  }catch(x){fail("Couldn’t add it to Google Calendar. Please try again.")}
+  }catch(x){fail("Couldn’t save it to Google Calendar. Please try again.")}
+}
+async function delSched(){
+  const s=sched;if(!s||!s.eid)return;
+  const fail=m=>{s.msg=m;renderSched()};
+  if(!tok)return fail("Connect Google Calendar first, then try again.");
+  if(!confirm("Delete “"+(s.title||"this event")+"” from Google Calendar?"))return;
+  try{
+    const r=await fetch(EVURL+"/"+encodeURIComponent(s.eid),{method:"DELETE",headers:{Authorization:"Bearer "+tok}});
+    if(r.status===401){expired();return fail("Google needs your permission again. Tap Connect below, allow it, then try again.")}
+    if(r.status===403)return fail("Google didn’t allow deleting this. If it’s someone else’s event, remove it in Google Calendar.");
+    if(!(r.ok||r.status===410))throw 0;
+    const t=pendings.find(x=>x.evId===s.eid);if(t)await upd(t,{evStart:"",evId:""});
+    sfx("del");sched=null;renderSched();reload();
+  }catch(x){fail("Couldn’t delete it. Please try again.")}
 }
 function renderCal(){
   const today=sod(new Date()),[rs,re]=range();
@@ -390,7 +418,7 @@ function renderCal(){
   gaps.forEach(g=>{const hgt=(g[1]-g[0])/36e5*PX;tl.append(h("div",{class:"blk fr",title:"Tap to schedule here",onclick:()=>openSched({start:g[0],end:g[1]}),style:"top:"+top(g[0])+"px;height:"+(hgt-2)+"px"},hgt>=34?"Free · "+tm(g[0])+" – "+tm(g[1]):"Free"))});
   day.forEach(e=>{const s=new Date(Math.max(e.s,ws)),f=new Date(Math.min(e.e,we));if(f<=s)return;
     const c=evCo(e)||{color:"#2b5fd9",color2:"#0e9aa7"},hgt=Math.max(24,(f-s)/36e5*PX-2);
-    tl.append(h("div",{class:"blk ev",style:cs(c)+";top:"+top(s)+"px;height:"+hgt+"px"},e.t,hgt>=44?h("em",{},tm(e.s)+" – "+tm(e.e)):null))});
+    tl.append(h("div",{class:"blk ev",title:"Tap to edit",onclick:()=>editEvent(e),style:cs(c)+";top:"+top(s)+"px;height:"+hgt+"px"},e.t,hgt>=44?h("em",{},tm(e.s)+" – "+tm(e.e)):null))});
   B.append(h("div",{class:"meta",style:"font-size:12px;color:var(--mute);margin-bottom:8px"},fm(a,{weekday:"long",month:"long",day:"numeric"})));
   B.append(tl);
   const dueToday=pendings.filter(t=>!t.done&&t.due===ymd(a));

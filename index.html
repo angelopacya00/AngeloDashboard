@@ -81,6 +81,11 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Poppins,system
 .dueb div{background:var(--soft);border-left:4px solid var(--c1);border-radius:10px;padding:7px 12px;font-size:12px}
 .note{background:var(--soft);border-radius:14px;padding:14px;color:var(--mute);font-size:13px}
 .banner{margin-top:12px}
+.edit{display:flex;flex-direction:column;gap:8px;background:var(--soft);border-radius:14px;margin:6px 0;padding:12px}
+.edit .ei{font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;width:100%}
+.edit .er{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.edit input[type=date],.edit select{font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+.ebtn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 12px;font:inherit;font-size:13px;cursor:pointer}
 .gbtn{border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:600;color:#fff;background:linear-gradient(135deg,#12284c,#0e9aa7);cursor:pointer}
 .foot{display:flex;gap:8px;justify-content:center;padding:0 0 100px}
 .foot button{border:1px solid var(--line);background:var(--card);color:var(--mute);border-radius:999px;padding:7px 14px;font:inherit;font-size:12px;cursor:pointer}
@@ -214,6 +219,21 @@ async function importAll(j){
   if(cloud&&authUser){for(const[n,rows]of[["companies",j.companies],["pendings",j.pendings]]){const col=FB.collection(FB.db,"users",authUser.uid,n);for(const r of rows){const{id,...d}=r;await FB.setDoc(id?FB.doc(col,id):FB.doc(col),d)}}}
   else{localStorage.setItem("mp_co",JSON.stringify(j.companies));localStorage.setItem("mp_pd",JSON.stringify(j.pendings));coS.reload();pdS.reload()}
 }
+let editId=null,ed={};
+function startEdit(t){editId=t.id;ed={title:t.title,due:t.due||"",pr:pr(t),company:t.company};render();setTimeout(()=>{const i=document.querySelector(".ei");if(i)i.focus()},0)}
+async function saveEdit(t){
+  const title=await polish((ed.title||"").trim());if(!title)return;
+  const f={title,due:ed.due||"",pr:ed.pr,hi:ed.pr==="high",company:ed.company};
+  editId=null;sfx("add");await upd(t,f);render();
+}
+function editRow(t){
+  const e=ed,done=()=>{editId=null;render()};
+  const ti=h("input",{class:"ei",value:e.title,maxlength:200,oninput:x=>e.title=x.target.value,onkeydown:x=>{if(x.key==="Enter")saveEdit(t);if(x.key==="Escape")done()}});
+  const dt=h("input",{type:"date",value:e.due,onchange:x=>e.due=x.target.value});
+  const sel=h("select",{onchange:x=>e.company=x.target.value},...companies.map(c=>h("option",{value:c.id,selected:c.id===e.company},c.name)));
+  const pb=h("button",{class:"ebtn",onclick:x=>{e.pr=nextPr(e.pr);x.target.textContent=lbl(e.pr)}},lbl(e.pr));
+  return h("div",{class:"edit"},ti,h("div",{class:"er"},dt,h("button",{class:"ebtn",onclick:()=>{e.due="";dt.value=""}},"No date"),pb,sel),h("div",{class:"er"},h("button",{class:"gbtn",onclick:()=>saveEdit(t)},"Save"),h("button",{class:"ebtn",onclick:done},"Cancel")));
+}
 async function addCompany(){
   const name=$("#coName").value.trim();if(!name||companies.some(c=>c.name.toLowerCase()===name.toLowerCase()))return;$("#coName").value="";
   const pal=PAL[companies.length%PAL.length],c={name,color:pal[0],color2:pal[1],order:Date.now()};
@@ -260,10 +280,10 @@ function render(){
     const card=h("div",{class:"co",style:cs(c)},
       h("div",{class:"coh"},h("div",{class:"ring","data-t":pct+"%",style:"--p:"+pct+"%"}),h("div",{class:"n"},h("h2",{},c.name),h("span",{},o.length+" open"+(lt?" · "+lt+" overdue":""))),h("button",{class:"x",title:"Remove company",onclick:()=>delCo(c)},"×")));
     const body=h("div",{class:"body"});if(!all.length)body.append(h("div",{class:"empty"},"All clear. Add the first pending below."));
-    items.forEach(t=>body.append(h("div",{class:"t"+(t.done?" done":"")+(pr(t)==="low"?" lowp":"")},
+    items.forEach(t=>body.append(editId===t.id?editRow(t):h("div",{class:"t"+(t.done?" done":"")+(pr(t)==="low"?" lowp":"")},
       h("button",{class:"chk"+(t.done?" on":""),onclick:()=>{sfx(t.done?"tick":pendings.filter(x=>!x.done).length===1?"win":"done");upd(t,{done:!t.done,doneAt:t.done?0:Date.now()})}},t.done?"✓":""),
-      h("div",{class:"tt"},t.title),dueP(t),
-      prB(t),
+      h("div",{class:"tt",style:"cursor:text",onclick:()=>startEdit(t)},t.title),dueP(t),
+      prB(t),h("button",{class:"del",title:"Edit",onclick:()=>startEdit(t)},"✎"),
       h("button",{class:"del",title:"Delete",onclick:()=>{sfx("del");del(t)}},"×"))));
     const hid=showDone?0:all.filter(t=>t.done).length;if(hid)body.append(h("div",{class:"empty",style:"padding:8px;font-size:12px"},"✓ "+hid+" done and hidden · ",h("a",{href:"#",style:"color:var(--c1);font-weight:600",onclick:ev=>{ev.preventDefault();showDone=true;ls("sd","1");$("#qH").classList.add("on");render()}},"Show")));
     const ti=h("input",{class:"ti",placeholder:"Add a pending for "+c.name+"…",value:d.title||"",maxlength:200,oninput:e=>d.title=e.target.value,onkeydown:e=>{if(e.key==="Enter")addTask(c)}});
@@ -377,7 +397,7 @@ function todayCard(td,dd){
   const L=pendings.filter(t=>!t.done&&pr(t)!=="low"&&(pr(t)==="high"||(t.due&&dd(t)<=td))&&(!q||t.title.toLowerCase().includes(q))).sort((a,b)=>((a.due||"9999")>(b.due||"9999")?1:-1));
   const card=h("div",{class:"co",style:"--c1:#12284c;--c2:#0e9aa7"},h("div",{class:"coh"},h("div",{class:"n"},h("h2",{},"⚡ Today’s focus"),h("span",{},L.length+" to tackle · overdue, due today and starred"))));
   const b=h("div",{class:"body"});if(!L.length)b.append(h("div",{class:"empty"},"Nothing urgent. Pick something from a company."));
-  L.forEach(t=>{const c=coOf(t.company)||{};b.append(h("div",{class:"t",style:cs(c)},h("button",{class:"chk",onclick:()=>{sfx(pendings.filter(x=>!x.done).length===1?"win":"done");upd(t,{done:true,doneAt:Date.now()})}}),h("div",{class:"tt"},t.title,h("div",{style:"font-size:11px;color:var(--mute)"},c.name||"")),dueP(t),prB(t)))});
+  L.forEach(t=>{const c=coOf(t.company)||{};b.append(editId===t.id?editRow(t):h("div",{class:"t",style:cs(c)},h("button",{class:"chk",onclick:()=>{sfx(pendings.filter(x=>!x.done).length===1?"win":"done");upd(t,{done:true,doneAt:Date.now()})}}),h("div",{class:"tt",style:"cursor:text",onclick:()=>startEdit(t)},t.title,h("div",{style:"font-size:11px;color:var(--mute)"},c.name||"")),dueP(t),prB(t)))});
   card.append(b);return card}
 const qs=$("#qD");
 qs.querySelectorAll("button[data-d]").forEach(b=>b.onclick=()=>{qDue=qDue===b.dataset.d?"":b.dataset.d;qs.querySelectorAll("button[data-d]").forEach(x=>x.classList.toggle("on",x.dataset.d===qDue))});

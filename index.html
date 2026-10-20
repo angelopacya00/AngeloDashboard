@@ -276,17 +276,19 @@ function render(){
   $("#hello").textContent=(hr<12?"Good morning":hr<18?"Good afternoon":"Good evening")+", Angelo";
   const open=pendings.filter(t=>!t.done),td=new Date(ymd(now)+"T00:00:00"),wk=new Date(td.getTime()+7*864e5),dd=t=>new Date(t.due+"T00:00:00");
   const late=open.filter(t=>t.due&&dd(t)<td).length,week=open.filter(t=>t.due&&dd(t)>=td&&dd(t)<=wk).length;
-  $("#sOpen").textContent=open.length;$("#qH").textContent=(showDone?"Hide done":"Show done")+" ("+(pendings.length-open.length)+")";$("#sWeek").textContent=week;$("#sLate").textContent=late;$("#sDone").textContent=pendings.filter(t=>t.done&&t.doneAt&&ymd(new Date(t.doneAt))===ymd(now)).length;
+  $("#sOpen").textContent=open.length;$("#qH").textContent=(showDone?"Hide done":"Show done")+" ("+pendings.filter(recent).length+")";$("#sWeek").textContent=week;$("#sLate").textContent=late;$("#sDone").textContent=pendings.filter(t=>t.done&&t.doneAt&&ymd(new Date(t.doneAt))===ymd(now)).length;
   $("#line").textContent=late?late+" overdue — let’s clear those first.":open.length?"You have "+open.length+" open pending"+(open.length>1?"s":"")+" across "+companies.length+" compan"+(companies.length===1?"y":"ies")+".":"Nothing pending. Enjoy the calm.";
   const tabs=$("#tabs");tabs.replaceChildren(h("button",{class:"tab all"+(filter==="all"?" on":""),onclick:()=>{filter="all";render()}},"All"),h("button",{class:"tab all"+(filter==="today"?" on":""),onclick:()=>{filter="today";render()}},"⚡ Today"));
   companies.forEach(c=>tabs.append(h("button",{class:"tab"+(filter===c.id?" on":""),style:cs(c),onclick:()=>{filter=c.id;render()}},h("i"),c.name,h("span",{class:"pill",style:"background:rgba(128,128,128,.18);color:inherit"},open.filter(t=>t.company===c.id).length))));
+  tabs.append(h("button",{class:"tab all"+(filter==="archive"?" on":""),onclick:()=>{filter="archive";render()}},"📦 Archive ("+pendings.filter(archived).length+")"));
   const qc=$("#qC"),qv=qc.value;qc.replaceChildren(...companies.map(c=>h("option",{value:c.id},c.name)));if(companies.some(c=>c.id===qv))qc.value=qv;else if(coOf(filter))qc.value=filter;
   const L=$("#lists");L.replaceChildren();
   if(!companies.length)L.append(h("div",{class:"co empty",style:"padding:30px"},"Add your first company above."));
   if(filter==="today")L.append(todayCard(td,dd));
+  if(filter==="archive")L.append(archiveCard());
   companies.filter(c=>filter==="all"||c.id===filter).forEach(c=>{
     const all=pendings.filter(t=>t.company===c.id),o=all.filter(t=>!t.done),pct=all.length?Math.round(100*(all.length-o.length)/all.length):0,lt=o.filter(t=>t.due&&dd(t)<td).length;
-    const items=all.filter(t=>(showDone||!t.done)&&(!q||t.title.toLowerCase().includes(q))).sort((a,b)=>(a.done-b.done)||(rk(a)-rk(b))||((a.due||"9999")>(b.due||"9999")?1:-1));
+    const items=all.filter(t=>(!t.done||(showDone&&recent(t)))&&(!q||t.title.toLowerCase().includes(q))).sort((a,b)=>(a.done-b.done)||(rk(a)-rk(b))||((a.due||"9999")>(b.due||"9999")?1:-1));
     const d=drafts[c.id]=drafts[c.id]||{};
     const card=h("div",{class:"co",style:cs(c)},
       h("div",{class:"coh"},h("div",{class:"ring","data-t":pct+"%",style:"--p:"+pct+"%"}),h("div",{class:"n"},h("h2",{},c.name),h("span",{},o.length+" open"+(lt?" · "+lt+" overdue":""))),h("button",{class:"x",title:"Remove company",onclick:()=>delCo(c)},"×")));
@@ -296,7 +298,7 @@ function render(){
       h("div",{class:"tt",style:"cursor:text",onclick:()=>startEdit(t)},t.title),dueP(t),evPill(t),
       prB(t),h("button",{class:"del",title:"Schedule",onclick:()=>{if(innerWidth<=900)setView("cal");openSched({title:t.title,company:t.company,pid:t.id,date:t.due?new Date(t.due+"T00:00:00"):undefined})}},"📅"),h("button",{class:"del",title:"Edit",onclick:()=>startEdit(t)},"✎"),
       h("button",{class:"del",title:"Delete",onclick:()=>{sfx("del");del(t)}},"×"))));
-    const hid=showDone?0:all.filter(t=>t.done).length;if(hid)body.append(h("div",{class:"empty",style:"padding:8px;font-size:12px"},"✓ "+hid+" done and hidden · ",h("a",{href:"#",style:"color:var(--c1);font-weight:600",onclick:ev=>{ev.preventDefault();showDone=true;ls("sd","1");$("#qH").classList.add("on");render()}},"Show")));
+    const hid=showDone?0:all.filter(recent).length;if(hid)body.append(h("div",{class:"empty",style:"padding:8px;font-size:12px"},"✓ "+hid+" done in the last 24 hours, hidden · ",h("a",{href:"#",style:"color:var(--c1);font-weight:600",onclick:ev=>{ev.preventDefault();showDone=true;ls("sd","1");$("#qH").classList.add("on");render()}},"Show")));
     const ti=h("input",{class:"ti",placeholder:"Add a pending for "+c.name+"…",value:d.title||"",maxlength:200,oninput:e=>d.title=e.target.value,onkeydown:e=>{if(e.key==="Enter")addTask(c)}});
     const st=h("button",{class:"star"+(d.pr==="high"?" on":d.pr==="low"?" lo":""),title:"Priority",onclick:e=>{d.pr=nextPr(d.pr||"");sfx("star");e.target.className="star"+(d.pr==="high"?" on":d.pr==="low"?" lo":"");e.target.textContent=ico(d.pr)}},ico(d.pr||""));
     card.append(body,h("div",{class:"add"},ti,h("input",{type:"date",value:d.due||"",onchange:e=>d.due=e.target.value}),st,h("button",{class:"btn",onclick:()=>addTask(c)},"Add")));
@@ -461,6 +463,17 @@ for(let i=0;i<=23;i++){const l=new Date(2000,0,1,i).toLocaleTimeString([],{hour:
 hs.value=hS;he.value=hE;
 hs.onchange=()=>{hS=+hs.value;ls("hs",hS);renderCal()};he.onchange=()=>{hE=+he.value;ls("he",hE);renderCal()};
 $("#coAdd").onclick=addCompany;$("#coName").addEventListener("keydown",e=>{if(e.key==="Enter")addCompany()});
+const recent=t=>t.done&&t.doneAt&&Date.now()-t.doneAt<864e5,archived=t=>t.done&&!recent(t);
+function archiveCard(){
+  const L=pendings.filter(archived).filter(t=>!q||t.title.toLowerCase().includes(q)).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  const card=h("div",{class:"co",style:"--c1:#64748b;--c2:#334155"},h("div",{class:"coh"},h("div",{class:"n"},h("h2",{},"📦 Archive"),h("span",{},L.length+" done more than 24 hours ago · tap ✓ to restore"))));
+  const b=h("div",{class:"body"});if(!L.length)b.append(h("div",{class:"empty"},"Nothing archived yet. Done pendings move here after 24 hours."));
+  L.forEach(t=>{const c=coOf(t.company)||{};b.append(h("div",{class:"t done",style:cs(c)},
+    h("button",{class:"chk on",title:"Restore",onclick:()=>{sfx("tick");upd(t,{done:false,doneAt:0})}},"✓"),
+    h("div",{class:"tt"},t.title,h("div",{style:"font-size:11px;color:var(--mute)"},(c.name||"")+(t.doneAt?" · done "+new Date(t.doneAt).toLocaleDateString([],{month:"short",day:"numeric"}):""))),
+    h("button",{class:"del",title:"Delete",onclick:()=>{sfx("del");del(t)}},"×")))});
+  card.append(b);return card;
+}
 const pr=t=>t.pr!==undefined?t.pr:(t.hi?"high":""),rk=t=>({high:0,"":1,low:2})[pr(t)];
 const nextPr=p=>p===""?"high":p==="high"?"low":"";
 const ico=p=>p==="high"?"★":p==="low"?"↓":"☆";

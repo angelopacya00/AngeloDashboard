@@ -95,6 +95,24 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Poppins,system
 .days.m .d{padding:4px 0}.d.td{outline:2px solid var(--acc)}.d.om{opacity:.4}
 .blk.fr,.blk.ev{cursor:pointer}.pill.lk{cursor:pointer}
 .edit input[type=time]{font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+.notes{border-top:1px solid var(--line);padding:6px 14px 12px}
+.nh{display:flex;gap:8px;align-items:center;width:100%;border:0;background:none;color:var(--ink);font:inherit;font-weight:600;padding:8px 0;cursor:pointer}
+.nta{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;resize:vertical;min-height:72px}
+.nadd{display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin-bottom:10px}
+.btn2{border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--c1),var(--c2))}
+.nhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}.nhead .nh{flex:1;width:auto}
+.ngrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.note-i{background:var(--soft);border-radius:14px;padding:12px;border-top:4px solid var(--c1);display:flex;flex-direction:column;gap:6px;min-width:0}
+.note-i.pin{background:var(--warnbg)}
+.nform{background:var(--soft);border-radius:14px;padding:12px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line)}
+.nform .meta2{font-size:12px;font-weight:600;color:var(--mute)}
+.nti{width:100%;font:inherit;font-size:16px;font-weight:600;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.ntb:not(.ex){display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.more{align-self:flex-start;border:0;background:none;color:var(--c1);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:0}
+.nb{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer}
+.nb.dl{color:var(--bad);border-color:var(--bad)}
+.note-i .ntt{font-weight:600;font-size:15px;overflow-wrap:anywhere}.note-i .ntb{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.nm{font-size:11px;color:var(--mute);margin-top:auto;padding-top:4px}.nm .na{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .gbtn{border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:600;color:#fff;background:linear-gradient(135deg,#12284c,#0e9aa7);cursor:pointer}
 .foot{display:flex;gap:8px;justify-content:center;padding:0 0 100px}
 .foot button{border:1px solid var(--line);background:var(--card);color:var(--mute);border-radius:999px;padding:7px 14px;font:inherit;font-size:12px;cursor:pointer}
@@ -181,7 +199,7 @@ function h(t,p,...k){const e=document.createElement(t);for(const x in p||{}){if(
 const cs=c=>"--c1:"+(c.color||PAL[0][0])+";--c2:"+(c.color2||PAL[0][1]);
 const coOf=id=>companies.find(c=>c.id===id);
 
-let coS,pdS;
+let coS,pdS,ntS;
 const SEED=[{id:"footlab",name:"FOOTLAB",color:"#0e9aa7",color2:"#12284c",order:1},{id:"kwench",name:"Kwench Juice Cafe",color:"#ff8a1f",color2:"#2fb86b",order:2}];
 function store(key,seed,cb){
   const rd=()=>{try{const v=localStorage.getItem(key);return v===null?seed.map(x=>({...x})):JSON.parse(v)}catch(e){return seed.map(x=>({...x}))}};
@@ -197,8 +215,10 @@ async function initData(){
   persist=true;
   coS=store("mp_co",SEED,rows=>{companies=rows.map(x=>({...x})).sort((a,b)=>(a.order||0)-(b.order||0));render()});
   pdS=store("mp_pd",[],rows=>{pendings=rows.map(x=>({...x}));render()});
+  ntS=store("mp_nt",[],rows=>{notes=rows.map(x=>({...x}));render()});
   coCol=coS;pdCol=pdS;coS.reload();pdS.reload();
-  addEventListener("storage",e=>{if(e.key==="mp_co")coS.reload();if(e.key==="mp_pd")pdS.reload()});
+  ntCol=ntS;ntS.reload();
+  addEventListener("storage",e=>{if(e.key==="mp_co")coS.reload();if(e.key==="mp_pd")pdS.reload();if(e.key==="mp_nt")ntS.reload()});
 }
 let authUser,cloud=false,unsubs=[];
 function renderAuth(){
@@ -207,6 +227,10 @@ function renderAuth(){
   const row={class:"note",style:"display:flex;gap:12px;align-items:center;flex-wrap:wrap"};
   if(!authUser){b.append(h("div",row,h("span",{style:"flex:1;min-width:200px"},"☁️ Sign in with Google to keep your pendings the same on your phone and laptop."),h("button",{class:"gbtn",onclick:()=>FB.signIn().catch(()=>{})},"Sign in")));return}
   b.append(h("div",row,h("span",{style:"flex:1;min-width:200px"},"☁️ Synced across your devices · "+(authUser.email||authUser.displayName||"signed in")),h("button",{class:"gbtn",style:"background:var(--ink);color:var(--bg)",onclick:()=>FB.signOut()},"Sign out")));
+}
+async function migrateNotes(){
+  try{const nc=FB.collection(FB.db,"users",authUser.uid,"notes");if(!(await FB.getDocs(nc)).empty)return;
+    const ln=JSON.parse(localStorage.getItem("mp_nt")||"[]");for(const n of ln){const{id,...d}=n;await FB.setDoc(FB.doc(nc,id),d)}}catch(e){}
 }
 async function migrate(){
   try{
@@ -219,16 +243,66 @@ async function migrate(){
 }
 window.onCloudUser=async u=>{
   unsubs.forEach(f=>f());unsubs=[];authUser=u;
-  if(!u){cloud=false;coCol=coS;pdCol=pdS;coS.reload();pdS.reload();renderAuth();return}
-  await migrate();cloud=true;
+  if(!u){cloud=false;coCol=coS;pdCol=pdS;coS.reload();pdS.reload();ntCol=ntS;ntS.reload();renderAuth();return}
+  await migrate();await migrateNotes();cloud=true;
   const mk=(name,cb)=>{const col=FB.collection(FB.db,"users",u.uid,name);unsubs.push(FB.onSnapshot(col,s=>cb(s.docs.map(d=>({id:d.id,...d.data()})))));return{add:d=>FB.addDoc(col,d),doc:id=>({update:f=>FB.updateDoc(FB.doc(col,id),f),delete:()=>FB.deleteDoc(FB.doc(col,id))})}};
   coCol=mk("companies",rows=>{companies=rows.sort((a,b)=>(a.order||0)-(b.order||0));render()});
   pdCol=mk("pendings",rows=>{pendings=rows;render()});
+  ntCol=mk("notes",rows=>{notes=rows;render()});
   renderAuth();
 };
 async function importAll(j){
-  if(cloud&&authUser){for(const[n,rows]of[["companies",j.companies],["pendings",j.pendings]]){const col=FB.collection(FB.db,"users",authUser.uid,n);for(const r of rows){const{id,...d}=r;await FB.setDoc(id?FB.doc(col,id):FB.doc(col),d)}}}
-  else{localStorage.setItem("mp_co",JSON.stringify(j.companies));localStorage.setItem("mp_pd",JSON.stringify(j.pendings));coS.reload();pdS.reload()}
+  if(cloud&&authUser){for(const[n,rows]of[["companies",j.companies],["pendings",j.pendings],["notes",j.notes||[]]]){const col=FB.collection(FB.db,"users",authUser.uid,n);for(const r of rows){const{id,...d}=r;await FB.setDoc(id?FB.doc(col,id):FB.doc(col),d)}}}
+  else{localStorage.setItem("mp_co",JSON.stringify(j.companies));localStorage.setItem("mp_pd",JSON.stringify(j.pendings));coS.reload();pdS.reload();if(Array.isArray(j.notes)){localStorage.setItem("mp_nt",JSON.stringify(j.notes));ntS.reload()}}
+}
+let notes=[],ntCol=null,nOpen={},nForm=null,nExp={};
+const nDate=n=>{const d=new Date(n.updated||n.created||Date.now());return d.toLocaleDateString([],{month:"short",day:"numeric",year:"numeric"})+" · "+tm(d)+(n.updated&&n.created&&n.updated>n.created+1000?" (edited)":"")};
+const nTitle=n=>n.title!==undefined?n.title:(n.text||"").split("\n")[0];
+const nBody=n=>n.title!==undefined?(n.text||""):(n.text||"").split("\n").slice(1).join("\n").trim();
+function newNote(c){nOpen[c.id]=true;nForm={cid:c.id,id:null,title:"",text:"",shown:false};render()}
+function editNote(n){nOpen[n.company]=true;nForm={cid:n.company,id:n.id,title:nTitle(n),text:nBody(n),shown:false};render()}
+async function updN(n,f){await ntCol.doc(n.id).update(f).catch(()=>{})}
+async function delN(n){if(!confirm("Delete the note “"+nTitle(n)+"”?"))return;sfx("del");await ntCol.doc(n.id).delete().catch(()=>{})}
+async function saveNote(){
+  const f=nForm,title=f.title.trim(),text=f.text.trim();if(!title&&!text)return;
+  const now=Date.now();nForm=null;sfx("add");
+  if(f.id){const n=notes.find(x=>x.id===f.id);if(n)await updN(n,{title:title||"Untitled",text,updated:now})}
+  else await ntCol.add({company:f.cid,title:title||"Untitled",text,created:now,updated:now,pin:false}).catch(()=>{});
+  render();
+}
+function noteForm(c){
+  const f=nForm;
+  const ti=h("input",{class:"nti",placeholder:"Title",value:f.title,maxlength:120,oninput:e=>f.title=e.target.value,onkeydown:e=>{if(e.key==="Enter")saveNote()}});
+  const ta=h("textarea",{class:"nta",rows:4,placeholder:"Write your note…",value:f.text,oninput:e=>f.text=e.target.value,onkeydown:e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter")saveNote()}});
+  if(!f.shown){f.shown=true;setTimeout(()=>ti.focus(),0)}
+  return h("div",{class:"nform"},h("div",{class:"meta2"},f.id?"Edit note":"New note for "+c.name),ti,ta,
+    h("div",{style:"display:flex;gap:8px"},h("button",{class:"btn2",onclick:saveNote},f.id?"Save changes":"Save note"),h("button",{class:"ebtn",onclick:()=>{nForm=null;render()}},"Cancel")));
+}
+function notesSec(c){
+  const all=notes.filter(n=>n.company===c.id);
+  const ns=all.filter(n=>!q||(nTitle(n)+" "+nBody(n)).toLowerCase().includes(q)).sort((a,b)=>((b.pin?1:0)-(a.pin?1:0))||((b.updated||b.created||0)-(a.updated||a.created||0)));
+  const open=!!nOpen[c.id]||(!!q&&ns.length>0)||(nForm&&nForm.cid===c.id);
+  const sec=h("div",{class:"notes"},h("div",{class:"nhead"},
+    h("button",{class:"nh",onclick:()=>{nOpen[c.id]=!open;if(open&&nForm&&nForm.cid===c.id)nForm=null;sfx("tick");render()}},"📝 Notes",h("span",{class:"pill"},all.length),h("span",{style:"margin-left:auto;color:var(--mute)"},open?"▾":"▸")),
+    open?h("button",{class:"btn2",onclick:()=>newNote(c)},"＋ New note"):null));
+  if(!open)return sec;
+  if(nForm&&nForm.cid===c.id)sec.append(noteForm(c));
+  if(!ns.length&&!(nForm&&nForm.cid===c.id))sec.append(h("div",{class:"empty"},all.length?"No notes match your search.":"No notes yet. Tap “＋ New note” to add one."));
+  const grid=h("div",{class:"ngrid"});
+  ns.forEach(n=>{
+    if(nForm&&nForm.id===n.id)return;
+    const body=nBody(n),ex=!!nExp[n.id],long=body.length>140||body.split("\n").length>4;
+    grid.append(h("div",{class:"note-i"+(n.pin?" pin":"")},
+      h("div",{class:"ntt"},(n.pin?"📌 ":"")+nTitle(n)),
+      body?h("div",{class:"ntb"+(ex?" ex":"")},body):null,
+      long?h("button",{class:"more",onclick:()=>{nExp[n.id]=!ex;render()}},ex?"Show less":"Read more"):null,
+      h("div",{class:"nm"},h("span",{},nDate(n)),h("div",{class:"na"},
+        h("button",{class:"nb",onclick:()=>updN(n,{pin:!n.pin})},n.pin?"📌 Unpin":"📌 Pin"),
+        h("button",{class:"nb",onclick:()=>editNote(n)},"✎ Edit"),
+        h("button",{class:"nb dl",onclick:()=>delN(n)},"🗑 Delete")))));
+  });
+  if(grid.children.length)sec.append(grid);
+  return sec;
 }
 let editId=null,ed={};
 function startEdit(t){editId=t.id;ed={title:t.title,due:t.due||"",pr:pr(t),company:t.company};render();setTimeout(()=>{const i=document.querySelector(".ei");if(i)i.focus()},0)}
@@ -258,8 +332,8 @@ async function addTask(c){
 async function upd(t,f){if(persist)await pdCol.doc(t.id).update(f).catch(()=>{});else{Object.assign(t,f);render()}}
 async function del(t){if(persist)await pdCol.doc(t.id).delete().catch(()=>{});else{pendings=pendings.filter(x=>x!==t);render()}}
 async function delCo(c){
-  if(!confirm("Remove “"+c.name+"” and all its pendings?"))return;
-  if(persist){for(const t of pendings.filter(t=>t.company===c.id))await pdCol.doc(t.id).delete().catch(()=>{});await coCol.doc(c.id).delete().catch(()=>{})}
+  if(!confirm("Remove “"+c.name+"” with all its pendings and notes?"))return;
+  if(persist){for(const t of pendings.filter(t=>t.company===c.id))await pdCol.doc(t.id).delete().catch(()=>{});for(const n of notes.filter(n=>n.company===c.id))await ntCol.doc(n.id).delete().catch(()=>{});await coCol.doc(c.id).delete().catch(()=>{})}
   else{pendings=pendings.filter(t=>t.company!==c.id);companies=companies.filter(x=>x!==c);render()}
   if(filter===c.id)filter="all";
 }
@@ -301,7 +375,7 @@ function render(){
     const hid=showDone?0:all.filter(recent).length;if(hid)body.append(h("div",{class:"empty",style:"padding:8px;font-size:12px"},"✓ "+hid+" done in the last 24 hours, hidden · ",h("a",{href:"#",style:"color:var(--c1);font-weight:600",onclick:ev=>{ev.preventDefault();showDone=true;ls("sd","1");$("#qH").classList.add("on");render()}},"Show")));
     const ti=h("input",{class:"ti",placeholder:"Add a pending for "+c.name+"…",value:d.title||"",maxlength:200,oninput:e=>d.title=e.target.value,onkeydown:e=>{if(e.key==="Enter")addTask(c)}});
     const st=h("button",{class:"star"+(d.pr==="high"?" on":d.pr==="low"?" lo":""),title:"Priority",onclick:e=>{d.pr=nextPr(d.pr||"");sfx("star");e.target.className="star"+(d.pr==="high"?" on":d.pr==="low"?" lo":"");e.target.textContent=ico(d.pr)}},ico(d.pr||""));
-    card.append(body,h("div",{class:"add"},ti,h("input",{type:"date",value:d.due||"",onchange:e=>d.due=e.target.value}),st,h("button",{class:"btn",onclick:()=>addTask(c)},"Add")));
+    card.append(body,h("div",{class:"add"},ti,h("input",{type:"date",value:d.due||"",onchange:e=>d.due=e.target.value}),st,h("button",{class:"btn",onclick:()=>addTask(c)},"Add")),notesSec(c));
     L.append(card);
   });
   renderCal();
@@ -535,7 +609,7 @@ document.body.className="v-tasks";
 const setView=v=>{document.body.className="v-"+v;$("#bT").classList.toggle("on",v==="tasks");$("#bC").classList.toggle("on",v==="cal");scrollTo(0,0)};
 $("#bT").onclick=()=>setView("tasks");$("#bC").onclick=()=>setView("cal");
 setInterval(render,300000);
-$("#bx").onclick=()=>{const b=new Blob([JSON.stringify({companies,pendings},null,1)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="my-pendings-backup-"+ymd(new Date())+".json";a.click()};
+$("#bx").onclick=()=>{const b=new Blob([JSON.stringify({companies,pendings,notes},null,1)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="my-pendings-backup-"+ymd(new Date())+".json";a.click()};
 $("#bi").onclick=()=>$("#bf").click();
 $("#bf").onchange=async e=>{try{const j=JSON.parse(await e.target.files[0].text());if(!Array.isArray(j.companies)||!Array.isArray(j.pendings))throw 0;if(!confirm("Import this backup? Items with the same ID will be overwritten."))return;await importAll(j)}catch(x){alert("That file isn’t a valid backup.")}e.target.value=""};
 $("#cPrev").onclick=()=>mv(-1);$("#cNext").onclick=()=>mv(1);
